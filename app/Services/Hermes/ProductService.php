@@ -102,8 +102,8 @@ class ProductService
                 if ($stock) {
                     $this->productInventoryRepository->create([
                         'product_id' => $product->id,
-                        'stock_id' => $stock->id,
-                        'quantity' => $data['stock'],
+                        'stock_id'   => $stock->id,
+                        'quantity'   => $data['stock'],
                     ]);
                 }
             }
@@ -142,9 +142,126 @@ class ProductService
 
         return $products;
     }
+
+    /**
+     * Update an existing product.
+     *
+     * Expected $data:
+     *   [
+     *       'product_id' => int,
+     *       'name' => string|null,
+     *       'price' => float|null,
+     *       'stock' => int|null,
+     *       'description' => string|null,
+     *       ... other fields
+     *   ]
+     *
+     * @param array $data
+     * @return mixed
+     */
+    public function update(array $data)
+    {
+        return DB::transaction(function () use ($data) {
+            if (!isset($data['product_id'])) {
+                throw new Exception('Product ID is required for update');
+            }
+
+            $product = $this->productRepository->find($data['product_id']);
+            if (!$product) {
+                throw new Exception("Product not found: {$data['product_id']}");
+            }
+
+            // Get default locale for translations
+            $locale = $this->localeRepository->findOneBy(['code' => BagistoConstants::DEFAULT_LOCALE]);
+            if (!$locale) {
+                throw new Exception('Default locale not found');
+            }
+
+            // Prepare update data
+            $updateData = [];
+
+            if (isset($data['name'])) {
+                $updateData['name'][$locale->code] = $data['name'];
+                $updateData['meta_title'][$locale->code] = $data['name'];
+            }
+            if (isset($data['description'])) {
+                $updateData['description'][$locale->code] = $data['description'];
+            }
+            if (isset($data['short_description'])) {
+                $updateData['short_description'][$locale->code] = $data['short_description'];
+            }
+            if (isset($data['price'])) {
+                $updateData['price'] = $data['price'];
+            }
+            if (isset($data['cost'])) {
+                $updateData['cost'] = $data['cost'];
+            }
+            if (isset($data['weight'])) {
+                $updateData['weight'] = $data['weight'];
+            }
+            if (isset($data['height'])) {
+                $updateData['height'] = $data['height'];
+            }
+            if (isset($data['width'])) {
+                $updateData['width'] = $data['width'];
+            }
+            if (isset($data['depth'])) {
+                $updateData['depth'] = $data['depth'];
+            }
+            if (isset($data['status'])) {
+                $updateData['status'] = $data['status'];
+            }
+            if (isset($data['visible_individually'])) {
+                $updateData['visible_individually'] = $data['visible_individually'];
+            }
+            if (isset($data['meta_description'])) {
+                $updateData['meta_description'][$locale->code] = $data['meta_description'];
+            }
+            if (isset($data['meta_keywords'])) {
+                $updateData['meta_keywords'][$locale->code] = $data['meta_keywords'];
+            }
+            if (isset($data['new_from_date'])) {
+                $updateData['new_from_date'] = $data['new_from_date'];
+            }
+            if (isset($data['new_to_date'])) {
+                $updateData['new_to_date'] = $data['new_to_date'];
+            }
+
+            // Update product
+            $product->update($updateData);
+
+            // Update inventory if stock is provided
+            if (isset($data['stock'])) {
+                $stock = $this->stockRepository->findOneBy(['code' => BagistoConstants::DEFAULT_STOCK]);
+                if ($stock) {
+                    $inventory = $this->productInventoryRepository->findOneBy([
+                        'product_id' => $product->id,
+                        'stock_id'   => $stock->id,
+                    ]);
+                    if ($inventory) {
+                        $inventory->update(['quantity' => $data['stock']]);
+                    } else {
+                        $this->productInventoryRepository->create([
+                            'product_id' => $product->id,
+                            'stock_id'   => $stock->id,
+                            'quantity'   => $data['stock'],
+                        ]);
+                    }
+                    // Update saleable flag
+                    $product->update(['saleable' => $data['stock'] > 0 ? 1 : 0]);
+                }
+            }
+
+            // Handle images if provided (we'll assume images are handled by ImageService before calling this)
+            // If we want to handle images here, we would need to download and attach them.
+            // For now, we leave it to the controller to use ImageService separately.
+
+            return $product;
+        });
+    }
 }
 
-// Helper class for constants (in a real system, you'd get these from config)
+// Helper class for constants (same as in ProductService)
 class BagistoConstants
 {
     const DEFAULT_CHANNEL = 'default';

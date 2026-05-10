@@ -10,6 +10,7 @@ use App\Services\Hermes\ProductService;
 use App\Services\Hermes\OrderService;
 use App\Services\Hermes\ConfigService;
 use App\Services\Hermes\ImageService;
+use App\Services\Hermes\InventoryService;
 use App\Services\Hermes\LoggerService;
 use Exception;
 
@@ -21,6 +22,7 @@ class HermesController extends Controller
     protected $orderService;
     protected $configService;
     protected $imageService;
+    protected $inventoryService;
     protected $logger;
 
     public function __construct(
@@ -30,6 +32,7 @@ class HermesController extends Controller
         OrderService $orderService,
         ConfigService $configService,
         ImageService $imageService,
+        InventoryService $inventoryService,
         LoggerService $logger
     ) {
         $this->aiParser = $aiParser;
@@ -38,6 +41,7 @@ class HermesController extends Controller
         $this->orderService = $orderService;
         $this->configService = $configService;
         $this->imageService = $imageService;
+        $this->inventoryService = $inventoryService;
         $this->logger = $logger;
     }
 
@@ -56,8 +60,15 @@ class HermesController extends Controller
             $parsed = $this->aiParser->parse($prompt);
 
             // Validate the action against policies
-            if (!$this->policyEngine->validate($parsed)) {
-                return response()->json(['error' => 'Action not allowed by policy'], 403);
+            $policyResult = $this->policyEngine->validate($parsed);
+            if (!$policyResult['allowed']) {
+                $this->logger->log('policy_violation', [
+                    'prompt' => $prompt,
+                    'parsed' => $parsed,
+                    'api_key' => $apiKey,
+                    'reason' => $policyResult['reason']
+                ]);
+                return response()->json(['error' => 'Action not allowed by policy: ' . $policyResult['reason']], 403);
             }
 
             // Log the action
@@ -75,6 +86,9 @@ class HermesController extends Controller
                 case 'bulk_create_products':
                     $result = $this->productService->bulkCreate($parsed['data']);
                     break;
+                case 'update_product':
+                    $result = $this->productService->update($parsed['data']); // Need to implement update in ProductService
+                    break;
                 case 'upload_image':
                     $result = $this->imageService->upload($parsed['data']);
                     break;
@@ -85,7 +99,7 @@ class HermesController extends Controller
                     $result = $this->orderService->manage($parsed['data']);
                     break;
                 case 'update_inventory':
-                    $result = $this->orderService->updateInventory($parsed['data']); // Note: using orderService for inventory? Might be better to have InventoryService, but for now we'll use orderService or create a new one.
+                    $result = $this->inventoryService->update($parsed['data']);
                     break;
                 default:
                     throw new Exception('Unknown action: ' . $parsed['action']);
@@ -189,7 +203,22 @@ class HermesController extends Controller
             if (!$this->validateApiKey($apiKey)) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            $result = $this->orderService->updateInventory($request->all());
+            $result = $this->inventoryService->update($request->all());
+            return response()->json(['success' => true, 'data' => $result]);
+        } catch (Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    // Additional endpoint for updating product (if needed)
+    public function updateProduct(Request $request)
+    {
+        try {
+            $apiKey = $request->header('X-API-KEY');
+            if (!$this->validateApiKey($apiKey)) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+            $result = $this->productService->update($request->all());
             return response()->json(['success' => true, 'data' => $result]);
         } catch (Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);

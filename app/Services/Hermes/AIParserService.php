@@ -2,243 +2,222 @@
 
 namespace App\Services\Hermes;
 
-use Exception;
+use App\Services\AI\AIManagerService;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Collection;
 
 class AIParserService
 {
     /**
-     * Parse a natural language prompt into a structured command.
+     * @var AIManagerService
+     */
+    protected $aiManager;
+
+    /**
+     * Constructor.
+     */
+    public function __construct(AIManagerService $aiManager)
+    {
+        $this->aiManager = $aiManager;
+    }
+
+    /**
+     * Parse a natural language command into a structured action.
+     *
+     * @param string $prompt The natural language command.
+     * @return array Structured command with action, data, confidence, reasoning, and follow_up_questions.
+     */
+    public function parse(string $prompt): array
+    {
+        // Construct the system prompt for the LLM to extract the command structure.
+        $systemPrompt = <<<EOT
+You are an AI assistant for an ecommerce operating system. Your task is to parse the user's natural language command into a structured JSON action.
+
+You must return a JSON object with the following fields:
+- action: string (the action to perform, e.g., "create_product", "bulk_create_products", "update_product", "update_inventory", "manage_orders", "upload_image", "update_store_config")
+- data: object (the data required for the action, structure depends on the action)
+- confidence: integer (0-100, how confident you are in the parsing)
+- reasoning: string (brief explanation of how you arrived at the action and data)
+- follow_up_questions: array of strings (any clarifying questions needed if the prompt is ambiguous)
+
+### Action Definitions:
+
+1. **create_product**: Create a single product.
+   Data: { name: string, price: number (>=0), stock: integer (>=0), description?: string, images?: array of strings (URLs) }
+
+2. **bulk_create_products**: Create multiple products of the same type.
+   Data: { name: string, price: number (>=0), stock: integer (>=0), quantity: integer (1-50), description?: string, images?: array of strings (URLs) }
+
+3. **update_product**: Update an existing product.
+   Data: { product_id: integer, price?: number, stock?: integer, name?: string, description?: string }
+
+4. **update_inventory**: Update stock for a product.
+   Data: { product_id: integer, stock: integer (>=0) }
+
+5. **manage_orders**: Manage orders (create, update status, cancel).
+   Data: { 
+        action: string (one of: "create", "update_status", "cancel"),
+        // For create:
+        customer_email?: string, 
+        customer_name?: string,
+        items: array of { product_id: integer, quantity: integer, price: number },
+        // For update_status:
+        order_id: integer, 
+        status: string (must be a valid Bagisto order status),
+        // For cancel:
+        order_id: integer
+   }
+
+6. **upload_image**: Upload images to a product.
+   Data: { product_id: integer, images: array of strings (URLs) }
+
+7. **update_store_config**: Update store settings.
+   Data: { store_name?: string, currency?: string, locale?: string, timezone?: string, tax_settings?: array }
+
+### Rules:
+- If the user mentions a price, it must be a number >= 0.
+- Stock must be an integer >= 0.
+- For bulk operations, quantity must be between 1 and 50.
+- If the user does not provide enough information, set confidence lower and include follow_up_questions.
+- If the prompt is unclear or could be multiple actions, choose the most likely and set confidence accordingly.
+- Always try to extract as much data as possible from the prompt.
+- If the user mentions "previous product" or similar, you cannot know the ID, so you should ask for clarification (follow_up_questions).
+- Do not make up data that is not in the prompt.
+
+### Examples:
+
+Prompt: "Create 10 Nike shoes priced at $80 with images and 200 stock each"
+Output:
+{
+  "action": "bulk_create_products",
+  "data": {
+    "name": "Nike shoes",
+    "price": 80,
+    "stock": 200,
+    "quantity": 10,
+    "description": "10 Nike shoes items",
+    "images": []
+  },
+  "confidence": 95,
+  "reasoning": "The user wants to create 10 of the same product with given price and stock.",
+  "follow_up_questions": []
+}
+
+Prompt: "Set store name to \"My Shop\""
+Output:
+{
+  "action": "update_store_config",
+  "data": {
+    "store_name": "My Shop"
+  },
+  "confidence": 90,
+  "reasoning": "The user wants to update the store name.",
+  "follow_up_questions": []
+}
+
+Prompt: "Upload images to product ID 12 from https://ex.com/i1.jpg, https://ex.com/i2.jpg"
+Output:
+{
+  "action": "upload_image",
+  "data": {
+    "product_id": 12,
+    "images": ["https://ex.com/i1.jpg", "https://ex.com/i2.jpg"]
+  },
+  "confidence": 95,
+  "reasoning": "The user wants to upload two images to product 12.",
+  "follow_up_questions": []
+}
+
+Prompt: "Create luxury variants of the previous product"
+Output:
+{
+  "action": "create_product",
+  "data": {
+    "name": "luxury variant",
+    "price": 0, // placeholder, will be clarified
+    "stock": 0, // placeholder
+    "description": "Luxury variant of the previous product"
+  },
+  "confidence": 60,
+  "reasoning": "The user wants to create a luxury variant, but we don't know the previous product's details.",
+  "follow_up_questions": [
+    "What is the name or ID of the previous product?",
+    "What price and stock should the luxury variant have?"
+  ]
+}
+
+Now, parse the following user prompt and return ONLY the JSON object (no additional text):
+EOT;
+
+        $fullPrompt = $systemPrompt . "\n\nUser prompt: " . $prompt;
+
+        try {
+            // Use the AI manager to get a JSON response.
+            $result = $this->aiManager->execute($fullPrompt, [], true); // true for JSON mode
+
+            if ($result && is_array($result)) {
+                // Ensure all required fields are present, set defaults if missing.
+                $result['action'] = $result['action'] ?? '';
+                $result['data'] = $result['data'] ?? [];
+                $result['confidence'] = $result['confidence'] ?? 0;
+                $result['reasoning'] = $result['reasoning'] ?? '';
+                $result['follow_up_questions'] = $result['follow_up_questions'] ?? [];
+
+                // Ensure confidence is integer between 0 and 100.
+                $result['confidence'] = max(0, min(100, intval($result['confidence'])));
+
+                // Log the parsing result for debugging.
+                Log::debug('AI Parser result: ' . json_encode($result));
+
+                return $result;
+            }
+
+            // If the AI didn't return a valid array, fallback to a safe default.
+            Log::warning('AI Parser did not return a valid array, falling back to safe default.');
+            return $this->getFallbackParse($prompt);
+        } catch (\Exception $e) {
+            Log::error('AI Parser error: ' . $e->getMessage());
+            return $this->getFallbackParse($prompt);
+        }
+    }
+
+    /**
+     * Fallback parser in case AI fails.
+     * This is a very basic regex-based parser for emergency use only.
+     * We keep it simple to avoid breaking the system.
      *
      * @param string $prompt
-     * @return array ['action' => string, 'data' => array, 'confidence' => int]
+     * @return array
      */
-    public function parse($prompt)
+    protected function getFallbackParse(string $prompt): array
     {
-        $prompt = trim($prompt);
-        if (empty($prompt)) {
-            return ['action' => 'unknown', 'data' => [], 'confidence' => 0];
-        }
-
         $promptLower = strtolower($prompt);
 
-        // 1. Create product with details: "Create 10 Nike shoes priced at $50 with images and 100 stock each"
-        if (preg_match('/create\s+(\d+)\s+(.+?)\s+priced\s+at\s+\$?(\d+(?:\.\d+)?)\s*(?:with\s+images\s+and\s+)?(\d+)\s+stock\s*each/i', $prompt, $matches)) {
-            $count = intval($matches[1]);
-            $name = trim($matches[2]);
-            $price = floatval($matches[3]);
-            $stock = intval($matches[4]);
-
-            return [
-                'action' => 'create_product',
-                'data' => [
-                    'name' => $name,
-                    'price' => $price,
-                    'stock' => $stock,
-                    'quantity' => $count,
-                    'description' => "{$count} {$name} items",
-                    'images' => [], // placeholder; images would need to be provided separately or via another prompt
-                ],
-                'confidence' => 95,
-            ];
-        }
-
-        // 2. Create product without stock: "Create 5 Apple watches priced at $200"
-        if (preg_match('/create\s+(\d+)\s+(.+?)\s+priced\s+at\s+\$?(\d+(?:\.\d+)?)/i', $prompt, $matches)) {
-            $count = intval($matches[1]);
-            $name = trim($matches[2]);
-            $price = floatval($matches[3]);
-
-            return [
-                'action' => 'create_product',
-                'data' => [
-                    'name' => $name,
-                    'price' => $price,
-                    'stock' => 0, // default stock 0; can be updated later via inventory
-                    'quantity' => $count,
-                    'description' => "{$count} {$name} items",
-                    'images' => [],
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 3. Bulk create products (simple): "Create 10 T-shirts products"
-        if (preg_match('/create\s+(\d+)\s+(.+?)\s+products/i', $prompt, $matches)) {
-            $count = intval($matches[1]);
-            $name = trim($matches[2]);
-
+        // Very basic fallback: if it looks like a create product command.
+        if (preg_match('/create.*(\d+)\s*.*(\d+(?:\.\d+)?)\s*dollar/i', $promptLower, $matches)) {
+            $quantity = intval($matches[1]) ?? 1;
+            $price = floatval($matches[2]) ?? 0;
             return [
                 'action' => 'bulk_create_products',
                 'data' => [
-                    'name' => $name,
-                    'price' => 0, // would need to be specified elsewhere; we'll set 0 and require update later
-                    'stock' => 0,
-                    'quantity' => $count,
-                ],
-                'confidence' => 85,
-            ];
-        }
-
-        // 4. Update product: "Update product ID 5 price to $30"
-        if (preg_match('/update\s+product\s+id\s+(\d+)\s+price\s+to\s+\$?(\d+(?:\.\d+)?)/i', $prompt, $matches)) {
-            $productId = intval($matches[1]);
-            $price = floatval($matches[2]);
-
-            return [
-                'action' => 'update_product',
-                'data' => [
-                    'product_id' => $productId,
+                    'name' => 'Product',
                     'price' => $price,
+                    'stock' => 0,
+                    'quantity' => min($quantity, 50),
                 ],
-                'confidence' => 90,
+                'confidence' => 30,
+                'reasoning' => 'Fallback parser: detected create command with quantity and price.',
+                'follow_up_questions' => ['Please provide more details for the product.']
             ];
         }
 
-        // 5. Update product stock: "Set stock of product ID 5 to 50"
-        if (preg_match('/set\s+stock\s+of\s+product\s+id\s+(\d+)\s+to\s+(\d+)/i', $prompt, $matches)) {
-            $productId = intval($matches[1]);
-            $stock = intval($matches[2]);
-
-            return [
-                'action' => 'update_inventory',
-                'data' => [
-                    'product_id' => $productId,
-                    'stock' => $stock,
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 6. Upload images: "Upload images to product ID 5 from http://example.com/img1.jpg, http://example.com/img2.jpg"
-        if (preg_match('/upload\s+images?\s+to\s+product\s+id\s+(\d+)\s+from\s+(.+)/i', $prompt, $matches)) {
-            $productId = intval($matches[1]);
-            $imagesStr = trim($matches[2]);
-            // Split by commas and clean up
-            $images = array_map('trim', explode(',', $imagesStr));
-            $images = array_filter($images, 'strlen');
-
-            return [
-                'action' => 'upload_image',
-                'data' => [
-                    'product_id' => $productId,
-                    'images' => $images,
-                ],
-                'confidence' => 85,
-            ];
-        }
-
-        // 7. Update store config: "Set store name to 'My Shop'"
-        if (preg_match('/set\s+store\s+name\s+to\s+["\']?(.+?)["\']?$/i', $prompt, $matches)) {
-            $storeName = trim($matches[1], "\"' ");
-
-            return [
-                'action' => 'update_store_config',
-                'data' => [
-                    'store_name' => $storeName,
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 8. Set currency: "Set currency to EUR"
-        if (preg_match('/set\s+currency\s+to\s+([A-Z]{3})/i', $prompt, $matches)) {
-            $currency = strtoupper($matches[1]);
-
-            return [
-                'action' => 'update_store_config',
-                'data' => [
-                    'currency' => $currency,
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 9. Set locale: "Set locale to fr_FR"
-        if (preg_match('/set\s+locale\s+to\s+([a-z]{2}(?:_[A-Z]{2})?)/i', $prompt, $matches)) {
-            $locale = $matches[1];
-
-            return [
-                'action' => 'update_store_config',
-                'data' => [
-                    'locale' => $locale,
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 10. Set timezone: "Set timezone to Asia/Kolkata"
-        if (preg_match('/set\s+timezone\s+to\s+(.+)/i', $prompt, $matches)) {
-            $timezone = trim($matches[1]);
-
-            return [
-                'action' => 'update_store_config',
-                'data' => [
-                    'timezone' => $timezone,
-                ],
-                'confidence' => 90,
-            ];
-        }
-
-        // 11. Manage orders: create order (simplified)
-        // Example: "Create order for customer@example.com with 2 x product ID 5 at $10 each"
-        if (preg_match('/create\s+order\s+for\s+([^\s]+)\s+with\s+(\d+)\s+x\s+product\s+id\s+(\d+)\s+at\s+\$?(\d+(?:\.\d+)?)\s*each/i', $prompt, $matches)) {
-            $customerEmail = $matches[1];
-            $quantity = intval($matches[2]);
-            $productId = intval($matches[3]);
-            $price = floatval($matches[4]);
-
-            return [
-                'action' => 'manage_orders',
-                'data' => [
-                    'action' => 'create',
-                    'customer_email' => $customerEmail,
-                    'items' => [
-                        [
-                            'product_id' => $productId,
-                            'quantity' => $quantity,
-                            'price' => $price,
-                        ],
-                    ],
-                ],
-                'confidence' => 80,
-            ];
-        }
-
-        // 12. Update order status: "Set order ID 10 status to processing"
-        if (preg_match('/set\s+order\s+id\s+(\d+)\s+status\s+to\s+(\w+)/i', $prompt, $matches)) {
-            $orderId = intval($matches[1]);
-            $status = strtolower($matches[2]);
-
-            return [
-                'action' => 'manage_orders',
-                'data' => [
-                    'action' => 'update_status',
-                    'order_id' => $orderId,
-                    'status' => $status,
-                ],
-                'confidence' => 85,
-            ];
-        }
-
-        // 13. Cancel order: "Cancel order ID 10"
-        if (preg_match('/cancel\s+order\s+id\s+(\d+)/i', $prompt, $matches)) {
-            $orderId = intval($matches[1]);
-
-            return [
-                'action' => 'manage_orders',
-                'data' => [
-                    'action' => 'cancel',
-                    'order_id' => $orderId,
-                ],
-                'confidence' => 85,
-            ];
-        }
-
-        // If none matched, return unknown
+        // Default fallback.
         return [
-            'action' => 'unknown',
-            'data' => ['prompt' => $prompt],
+            'action' => '',
+            'data' => [],
             'confidence' => 0,
+            'reasoning' => 'Fallback parser: could not parse the command.',
+            'follow_up_questions' => ['Please rephrase your command.']
         ];
     }
 }

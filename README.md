@@ -1,58 +1,197 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Hermes-API: AI-Powered Bagisto Control System
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Overview
 
-## About Laravel
+Hermes-API is an autonomous AI-driven control layer for Bagisto e-commerce platforms. It receives natural language prompts, validates them via a policy engine, and executes corresponding Bagisto operations (products, images, orders, inventory, store config) without altering Bagisto core.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+This repository contains two versions:
+- **Version 1 (master branch)**: The current Hermes-Bagisto AI Control System
+- **Version 2 (enterprise-upgrade branch)**: Enterprise-grade AI commerce operating system with NVIDIA AI integration, queues, SaaS readiness, and advanced features
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Quick Start (Version 2 - Enterprise Upgrade)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+### Prerequisites
+- PHP 8.1+
+- Composer
+- MySQL/PostgreSQL
+- Redis
+- Node.js & NPM (for Laravel Horizon)
+- Working Bagisto installation (v1.4+)
 
-## Learning Laravel
+### Installation
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/chinhigh80/hermesapibagisto.git
+   cd hermesapibagisto
+   ```
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+2. **Checkout the enterprise-upgrade branch**
+   ```bash
+   git checkout enterprise-upgrade
+   ```
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+3. **Install dependencies**
+   ```bash
+   composer install
+   npm install && npm run dev
+   ```
 
-## Agentic Development
+4. **Configure environment**
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` to configure:
+   - Database connection (matching your Bagisto setup)
+   - Redis connection
+   - AI provider keys (NVIDIA_API_KEY, OPENAI_API_KEY, etc.)
+   - APP_URL (e.g., http://localhost:8000)
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+5. **Generate application key**
+   ```bash
+   php artisan key:generate
+   ```
 
+6. **Run migrations**
+   ```bash
+   php artisan migrate
+   ```
+
+7. **Start services**
+   ```bash
+   # Start Laravel server
+   php artisan serve --host=0.0.0.0 --port=8000
+   
+   # In another terminal, start Redis server (if not already running)
+   redis-server
+   
+   # In another terminal, start Horizon queue workers
+   php artisan horizon
+   ```
+
+### Usage
+
+#### API Authentication
+All Hermes endpoints are protected by Laravel Sanctum. Obtain a token via:
 ```bash
-composer require laravel/boost --dev
+curl -X POST http://localhost:8000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Operator","email":"operator@example.com","password":"secret","password_confirmation":"secret"}'
 
-php artisan boost:install
+# Then login to get token
+curl -X POST http://localhost:8000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"operator@example.com","password":"secret"}'
+```
+Use the returned token in the `Authorization: Bearer <token>` header.
+
+#### Main AI Endpoint
+Send natural language commands to:
+```
+POST /api/hermes/command
+Headers: Authorization: Bearer <token>
+Body: { "prompt": "Your natural language command here" }
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+**Example prompts:**
+- `Create 10 Nike shoes priced at $80 with images and 200 stock each`
+- `Set store name to "My Shop"`
+- `Upload images to product ID 12 from https://ex.com/i1.jpg, https://ex.com/i2.jpg`
+- `Create luxury variants of the previous product` (will ask follow-up questions)
+- `Reduce prices of low-selling products by 10%`
+- `Generate SEO descriptions for all Nike products`
 
-## Contributing
+#### Direct Endpoints (Bypass AI Parser)
+For programmatic access, you can also use:
+- `POST /api/hermes/products/create`
+- `POST /api/hermes/products/bulk`
+- `POST /api/hermes/images/upload`
+- `POST /api/hermes/store/config/update`
+- `POST /api/hermes/orders/manage`
+- `POST /api/hermes/inventory/update`
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Version 1 (Original)
 
-## Code of Conduct
+To use the original Hermes-Bagisto AI Control System:
+```bash
+git checkout master
+# Then follow the same installation steps above
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### Architecture
 
-## Security Vulnerabilities
+#### Core Components
+- **AIParserService**: Uses LLM (NVIDIA/OpenAI/Claude) to convert natural language to structured actions
+- **PolicyEngineService**: Validates all actions against safety rules
+- **Service Layer**: ProductService, ImageService, OrderService, InventoryService, ConfigService
+- **Queue System**: Laravel Horizon with Redis for heavy operations (image processing, bulk creates, SEO generation)
+- **Event System**: Laravel events and listeners for decoupled processing
+- **Webhook System**: Outbound webhooks to Shopify, Slack, Telegram, Discord
+- **RBAC**: Role-based access control with permissions and API scopes
+- **Multi-tenant**: SaaS-ready architecture with tenant isolation
+- **Observability**: Laravel Telescope, Horizon dashboard, OpenTelemetry, structured logging
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+#### AI Providers
+Supports multiple AI providers with automatic fallback:
+- NVIDIA AI/NIM (primary)
+- OpenAI
+- Anthropic Claude
+- Local LLM (for air-gapped environments)
 
-## License
+Configuration in `config/ai.php` and `.env`:
+```
+AI_PROVIDER=nvidia
+AI_FALLBACK_PROVIDER=openai
+NVIDIA_API_KEY=your_key_here
+AI_MODEL=nemotron-3-super-120b-a12b
+AI_TIMEOUT=120
+AI_MAX_TOKENS=4096
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Monitoring & Operations
+
+#### Health Checks
+- `GET /api/hermes/health` - Basic health status
+- `GET /api/hermes/metrics` - Prometheus-formatted metrics
+- `GET /api/hermes/status` - Detailed system status
+
+#### Dashboards
+- **Horizon Dashboard**: `/horizon` (queue monitoring)
+- **Telescope**: `/telescope` (requests, exceptions, logs)
+- **Admin Dashboard**: `/admin` (Filament-based enterprise dashboard)
+
+#### Logs
+- Storage logs: `storage/logs/laravel.log`
+- Channel-specific logs: Configure in `config/logging.php`
+
+### Security Features
+- Input sanitization and validation
+- Prompt injection protection
+- Encrypted secrets storage
+- Secure file uploads with MIME validation
+- Rate limiting (10 req/sec by default)
+- CSRF protection
+- Signed webhook URLs
+- OWASP compliance
+
+### Testing
+Run the test suite:
+```bash
+php artisan test
+```
+Target: 80%+ code coverage
+
+### Deployment
+See `docker-compose.yml` for production deployment with:
+- Nginx
+- PHP-FPM
+- Redis
+- MySQL/PostgreSQL
+- Horizon workers
+- Health checks and restart policies
+
+### Support
+For issues and feature requests, please use the GitHub issue tracker.
+
+### License
+MIT License

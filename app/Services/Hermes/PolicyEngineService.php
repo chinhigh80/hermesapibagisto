@@ -105,7 +105,7 @@ class PolicyEngineService
 
         // Stock >= 0
         if (!is_int($data['stock']) && !ctype_digit((string)$data['stock'])) {
-            return ['allowed' => false, 'reason' => 'Stock must be an integer';
+            return ['allowed' => false, 'reason' => 'Stock must be an integer'];
         }
         if ((int)$data['stock'] < 0) {
             return ['allowed' => false, 'reason' => 'Stock cannot be negative'];
@@ -113,7 +113,7 @@ class PolicyEngineService
 
         // Quantity limit: max 50 per request
         if (!is_int($data['quantity']) && !ctype_digit((string)$data['quantity'])) {
-            return ['allowed' => false, 'reason' => 'Quantity must be an integer';
+            return ['allowed' => false, 'reason' => 'Quantity must be an integer'];
         }
         $qty = (int)$data['quantity'];
         if ($qty <= 0) {
@@ -149,10 +149,10 @@ class PolicyEngineService
         // If stock is being updated, validate
         if (isset($data['stock'])) {
             if (!is_int($data['stock']) && !ctype_digit((string)$data['stock'])) {
-                return ['allowed' => false, 'reason' => 'Stock must be an integer';
+                return ['allowed' => false, 'reason' => 'Stock must be an integer'];
             }
             if ((int)$data['stock'] < 0) {
-                return ['allowed' => false, 'reason' => 'Stock cannot be negative';
+                return ['allowed' => false, 'reason' => 'Stock cannot be negative'];
             }
         }
 
@@ -219,7 +219,7 @@ class PolicyEngineService
 
         // Tax settings: if present, must be array
         if (isset($data['tax_settings']) && !is_array($data['tax_settings'])) {
-            return ['allowed' => false, 'reason' => 'Tax settings must be an array';
+            return ['allowed' => false, 'reason' => 'Tax settings must be an array'];
         }
 
         return ['allowed' => true, 'reason' => 'Store config update allowed'];
@@ -250,10 +250,10 @@ class PolicyEngineService
                         return ['allowed' => false, "reason" => "Item {$index} price must be positive"];
                     }
                     if (!is_int($item['quantity']) && !ctype_digit((string)$item['quantity'])) {
-                        return ['allowed' => false, "reason" => "Item {$index} quantity must be integer";
+                        return ['allowed' => false, 'reason' => "Item {$index} quantity must be integer"];
                     }
                     if ((int)$item['quantity'] <= 0) {
-                        return ['allowed' => false, "reason" => "Item {$index} quantity must be positive";
+                        return ['allowed' => false, 'reason' => "Item {$index} quantity must be positive"];
                     }
                 }
 
@@ -269,16 +269,16 @@ class PolicyEngineService
                 }
                 // Validate status is a string (we could check against allowed statuses)
                 if (!is_string($data['status'])) {
-                    return ['allowed' => false, 'reason' => 'Status must be a string';
+                    return ['allowed' => false, 'reason' => 'Status must be a string'];
                 }
                 break;
             case 'cancel':
                 if (!isset($data['order_id'])) {
-                    return ['allowed' => false, 'reason' => 'Order ID is required for cancellation';
+                    return ['allowed' => false, 'reason' => 'Order ID is required for cancellation'];
                 }
                 break;
             default:
-                return ['allowed' => false, 'reason' => 'Unknown order action: ' . $data['action'];
+                return ['allowed' => false, 'reason' => 'Unknown order action: ' . $data['action']];
         }
 
         return ['allowed' => true, 'reason' => 'Order management allowed'];
@@ -290,17 +290,17 @@ class PolicyEngineService
     protected function validateUpdateInventory(array $data)
     {
         if (!isset($data['product_id']) || !isset($data['stock'])) {
-            return ['allowed' => false, 'reason' => 'Product ID and stock quantity are required';
+            return ['allowed' => false, 'reason' => 'Product ID and stock quantity are required'];
         }
 
         // Stock must be integer >= 0
         if (!is_int($data['stock']) && !ctype_digit((string)$data['stock'])) {
-            return ['allowed' => false, 'reason' => 'Stock must be an integer';
+            return ['allowed' => false, 'reason' => 'Stock must be an integer'];
         }
         if ((int)$data['stock'] < 0) {
-            return ['allowed' => false, 'reason' => 'Stock cannot be negative';
+            return ['allowed' => false, 'reason' => 'Stock cannot be negative'];
         }
 
-        return ['allowed' => true, 'reason' => 'Inventory update allowed';
+        return ['allowed' => true, 'reason' => 'Inventory update allowed'];
     }
 }

@@ -114,7 +114,7 @@ class AIManagerService
                 }
             } catch (\Exception $e) {
                 $lastException = $e;
-                Log::warning("AI provider {$this->primaryProvider} attempt {$attempt + 1} failed: {$e->getMessage()}");
+                Log::warning('AI provider ' . $this->primaryProvider . ' attempt ' . ($attempt + 1) . ' failed: ' . $e->getMessage());
 
                 // If we are not on the last attempt, wait before retrying
                 if ($attempt < $this->maxRetries - 1) {

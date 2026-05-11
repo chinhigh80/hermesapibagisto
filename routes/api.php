@@ -2,7 +2,13 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\HermesController;
+use App\Http\Controllers\AuthController;
 
+// Public authentication routes
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login', [AuthController::class, 'login']);
+
+// Protected Hermes API routes
 Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/hermes/command', [HermesController::class, 'processCommand']);
     Route::post('/hermes/products/create', [HermesController::class, 'createProduct']);
